@@ -1,0 +1,185 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. TCINTCH.
+       ENVIRONMENT DIVISION.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01  WS-NEW-ENTRY.
+           05  WS-NEW-KEY                  PIC X(11).
+           05  WS-NEW-RATE                 PIC 9V9(4).
+           05  WS-NEW-PER-ITEM             PIC 9(3)V99.
+           05  WS-NEW-MAX-FEE              PIC 9(5)V99.
+       01  WS-CASE.
+           05  WS-CASE-NAME                PIC X(24).
+           05  WS-CASE-KEY.
+               10  WS-CASE-NETWORK         PIC X(4).
+               10  WS-CASE-PRODUCT         PIC X(4).
+               10  WS-CASE-MCC-CLASS       PIC X(2).
+               10  WS-CASE-PRESENCE        PIC X.
+               10  WS-CASE-DR-CR           PIC X.
+           05  WS-CASE-AMOUNT              PIC 9(9)V99.
+           05  WS-EXP-LEVEL                PIC 9.
+           05  WS-EXP-FEE                  PIC S9(7)V99.
+       01  WS-PASSED                       PIC 9(4) VALUE 0.
+       01  WS-FAILED                       PIC 9(4) VALUE 0.
+       01  WS-DISPLAY-FEE                  PIC -(7)9.99.
+       01  WS-DISPLAY-EXP                  PIC -(7)9.99.
+           COPY CPFEETBL.
+           COPY CPINTPRM.
+       PROCEDURE DIVISION.
+       0000-MAINLINE.
+           DISPLAY 'TCINTCH  INTERCHANGE RATE ENGINE TESTS'
+           PERFORM 1000-BUILD-FEE-TABLE
+           PERFORM 2000-RUN-TESTS
+           DISPLAY 'TCINTCH  PASSED ' WS-PASSED ' FAILED ' WS-FAILED
+           IF WS-FAILED > ZERO
+               MOVE 8 TO RETURN-CODE
+           ELSE
+               MOVE ZERO TO RETURN-CODE
+           END-IF
+           GOBACK.
+
+       1000-BUILD-FEE-TABLE.
+           MOVE ZERO TO FT-ENTRY-COUNT
+           MOVE 'MCRD*******' TO WS-NEW-KEY
+           MOVE .0158 TO WS-NEW-RATE
+           MOVE .10 TO WS-NEW-PER-ITEM
+           MOVE ZERO TO WS-NEW-MAX-FEE
+           PERFORM 1100-ADD-ENTRY
+           MOVE 'VISA*******' TO WS-NEW-KEY
+           MOVE .0151 TO WS-NEW-RATE
+           MOVE .10 TO WS-NEW-PER-ITEM
+           MOVE ZERO TO WS-NEW-MAX-FEE
+           PERFORM 1100-ADD-ENTRY
+           MOVE 'VISA****CA*' TO WS-NEW-KEY
+           MOVE ZERO TO WS-NEW-RATE
+           MOVE .50 TO WS-NEW-PER-ITEM
+           MOVE ZERO TO WS-NEW-MAX-FEE
+           PERFORM 1100-ADD-ENTRY
+           MOVE 'VISA****UT*' TO WS-NEW-KEY
+           MOVE .0100 TO WS-NEW-RATE
+           MOVE ZERO TO WS-NEW-PER-ITEM
+           MOVE 1.50 TO WS-NEW-MAX-FEE
+           PERFORM 1100-ADD-ENTRY
+           MOVE 'VISAGOLD***' TO WS-NEW-KEY
+           MOVE .0165 TO WS-NEW-RATE
+           MOVE .10 TO WS-NEW-PER-ITEM
+           MOVE ZERO TO WS-NEW-MAX-FEE
+           PERFORM 1100-ADD-ENTRY
+           MOVE 'VISAGOLDSM*' TO WS-NEW-KEY
+           MOVE .0130 TO WS-NEW-RATE
+           MOVE .05 TO WS-NEW-PER-ITEM
+           MOVE ZERO TO WS-NEW-MAX-FEE
+           PERFORM 1100-ADD-ENTRY
+           MOVE 'VISAGOLDSMP' TO WS-NEW-KEY
+           MOVE .0115 TO WS-NEW-RATE
+           MOVE .05 TO WS-NEW-PER-ITEM
+           MOVE ZERO TO WS-NEW-MAX-FEE
+           PERFORM 1100-ADD-ENTRY
+           MOVE 'VISAPLATTRN' TO WS-NEW-KEY
+           MOVE .0240 TO WS-NEW-RATE
+           MOVE .10 TO WS-NEW-PER-ITEM
+           MOVE ZERO TO WS-NEW-MAX-FEE
+           PERFORM 1100-ADD-ENTRY.
+
+       1100-ADD-ENTRY.
+           ADD 1 TO FT-ENTRY-COUNT
+           MOVE WS-NEW-KEY TO FT-KEY(FT-ENTRY-COUNT)
+           MOVE WS-NEW-RATE TO FT-RATE(FT-ENTRY-COUNT)
+           MOVE WS-NEW-PER-ITEM TO FT-PER-ITEM(FT-ENTRY-COUNT)
+           MOVE WS-NEW-MAX-FEE TO FT-MAX-FEE(FT-ENTRY-COUNT).
+
+       2000-RUN-TESTS.
+           MOVE 'EXACT MATCH' TO WS-CASE-NAME
+           MOVE 'VISAGOLDSMPD' TO WS-CASE-KEY
+           MOVE 100.00 TO WS-CASE-AMOUNT
+           MOVE 1 TO WS-EXP-LEVEL
+           MOVE 1.20 TO WS-EXP-FEE
+           PERFORM 3000-RUN-CASE
+
+           MOVE 'PRESENCE DEFAULT' TO WS-CASE-NAME
+           MOVE 'VISAGOLDSMND' TO WS-CASE-KEY
+           MOVE 100.00 TO WS-CASE-AMOUNT
+           MOVE 2 TO WS-EXP-LEVEL
+           MOVE 1.35 TO WS-EXP-FEE
+           PERFORM 3000-RUN-CASE
+
+           MOVE 'PRODUCT DEFAULT' TO WS-CASE-NAME
+           MOVE 'VISAGOLDFUPD' TO WS-CASE-KEY
+           MOVE 200.00 TO WS-CASE-AMOUNT
+           MOVE 3 TO WS-EXP-LEVEL
+           MOVE 3.40 TO WS-EXP-FEE
+           PERFORM 3000-RUN-CASE
+
+           MOVE 'CATEGORY CAP APPLIED' TO WS-CASE-NAME
+           MOVE 'VISACLSCUTND' TO WS-CASE-KEY
+           MOVE 500.00 TO WS-CASE-AMOUNT
+           MOVE 5 TO WS-EXP-LEVEL
+           MOVE 1.50 TO WS-EXP-FEE
+           PERFORM 3000-RUN-CASE
+
+           MOVE 'NETWORK DEFAULT ROUNDED' TO WS-CASE-NAME
+           MOVE 'VISACLSCGNPD' TO WS-CASE-KEY
+           MOVE 80.00 TO WS-CASE-AMOUNT
+           MOVE 6 TO WS-EXP-LEVEL
+           MOVE 1.31 TO WS-EXP-FEE
+           PERFORM 3000-RUN-CASE
+
+           MOVE 'CREDIT REVERSES FEE' TO WS-CASE-NAME
+           MOVE 'VISAGOLDSMPC' TO WS-CASE-KEY
+           MOVE 100.00 TO WS-CASE-AMOUNT
+           MOVE 1 TO WS-EXP-LEVEL
+           MOVE -1.20 TO WS-EXP-FEE
+           PERFORM 3000-RUN-CASE
+
+           MOVE 'UNKNOWN NETWORK' TO WS-CASE-NAME
+           MOVE 'AMEXGOLDSMPD' TO WS-CASE-KEY
+           MOVE 100.00 TO WS-CASE-AMOUNT
+           MOVE 0 TO WS-EXP-LEVEL
+           MOVE ZERO TO WS-EXP-FEE
+           PERFORM 3000-RUN-CASE
+
+           MOVE 'SECOND NETWORK DEFAULT' TO WS-CASE-NAME
+           MOVE 'MCRDPLATTRND' TO WS-CASE-KEY
+           MOVE 1000.00 TO WS-CASE-AMOUNT
+           MOVE 6 TO WS-EXP-LEVEL
+           MOVE 15.90 TO WS-EXP-FEE
+           PERFORM 3000-RUN-CASE
+
+           MOVE 'MINIMUM AMOUNT' TO WS-CASE-NAME
+           MOVE 'VISAPLATTRND' TO WS-CASE-KEY
+           MOVE 0.01 TO WS-CASE-AMOUNT
+           MOVE 1 TO WS-EXP-LEVEL
+           MOVE 0.10 TO WS-EXP-FEE
+           PERFORM 3000-RUN-CASE
+
+           MOVE 'CASH ADVANCE FLAT FEE' TO WS-CASE-NAME
+           MOVE 'VISAPLATCAPD' TO WS-CASE-KEY
+           MOVE 200.00 TO WS-CASE-AMOUNT
+           MOVE 5 TO WS-EXP-LEVEL
+           MOVE 0.50 TO WS-EXP-FEE
+           PERFORM 3000-RUN-CASE.
+
+       3000-RUN-CASE.
+           MOVE WS-CASE-NETWORK TO INT-NETWORK
+           MOVE WS-CASE-PRODUCT TO INT-PRODUCT
+           MOVE WS-CASE-MCC-CLASS TO INT-MCC-CLASS
+           MOVE WS-CASE-PRESENCE TO INT-PRESENCE
+           MOVE WS-CASE-DR-CR TO INT-DR-CR
+           MOVE WS-CASE-AMOUNT TO INT-AMOUNT
+           CALL 'CPINTCH' USING FEE-TABLE INT-PARMS
+           MOVE INT-FEE TO WS-DISPLAY-FEE
+           MOVE WS-EXP-FEE TO WS-DISPLAY-EXP
+           IF INT-MATCH-LEVEL = WS-EXP-LEVEL
+              AND INT-FEE = WS-EXP-FEE
+               ADD 1 TO WS-PASSED
+               DISPLAY '  PASS  ' WS-CASE-NAME
+                       ' LEVEL ' INT-MATCH-LEVEL
+                       ' FEE ' WS-DISPLAY-FEE
+           ELSE
+               ADD 1 TO WS-FAILED
+               DISPLAY '  FAIL  ' WS-CASE-NAME
+                       ' LEVEL ' INT-MATCH-LEVEL
+                       ' EXPECTED ' WS-EXP-LEVEL
+                       ' FEE ' WS-DISPLAY-FEE
+                       ' EXPECTED ' WS-DISPLAY-EXP
+           END-IF.

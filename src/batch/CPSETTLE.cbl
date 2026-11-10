@@ -1,0 +1,376 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CPSETTLE.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT CTLCARD-FILE ASSIGN TO CTLCARD
+               ORGANIZATION IS SEQUENTIAL
+               FILE STATUS IS WS-CTLCARD-STATUS.
+           SELECT FEESORT-FILE ASSIGN TO FEESORT
+               ORGANIZATION IS SEQUENTIAL
+               FILE STATUS IS WS-FEESORT-STATUS.
+           SELECT SETTLE-FILE ASSIGN TO SETLOUT
+               ORGANIZATION IS SEQUENTIAL
+               FILE STATUS IS WS-SETTLE-STATUS.
+           SELECT CTL-FILE ASSIGN TO CTLOUT
+               ORGANIZATION IS SEQUENTIAL
+               FILE STATUS IS WS-CTL-STATUS.
+       DATA DIVISION.
+       FILE SECTION.
+       FD  CTLCARD-FILE
+           RECORDING MODE IS F
+           BLOCK CONTAINS 0 RECORDS
+           RECORD CONTAINS 80 CHARACTERS.
+       01  CTLCARD-REC                     PIC X(80).
+       FD  FEESORT-FILE
+           RECORDING MODE IS F
+           BLOCK CONTAINS 0 RECORDS
+           RECORD CONTAINS 150 CHARACTERS.
+       01  FEESORT-REC                     PIC X(150).
+       FD  SETTLE-FILE
+           RECORDING MODE IS F
+           BLOCK CONTAINS 0 RECORDS
+           RECORD CONTAINS 150 CHARACTERS.
+       01  SETTLE-REC                      PIC X(150).
+       FD  CTL-FILE
+           RECORDING MODE IS F
+           BLOCK CONTAINS 0 RECORDS
+           RECORD CONTAINS 120 CHARACTERS.
+       01  CTL-REC                         PIC X(120).
+
+       WORKING-STORAGE SECTION.
+       01  WS-FILE-STATUSES.
+           05  WS-CTLCARD-STATUS           PIC X(2).
+               88  CTLCARD-OK              VALUE '00'.
+               88  CTLCARD-EOF             VALUE '10'.
+           05  WS-FEESORT-STATUS           PIC X(2).
+               88  FEESORT-OK              VALUE '00'.
+               88  FEESORT-EOF             VALUE '10'.
+           05  WS-SETTLE-STATUS            PIC X(2).
+               88  SETTLE-OK               VALUE '00'.
+           05  WS-CTL-STATUS               PIC X(2).
+               88  CTL-OK                  VALUE '00'.
+
+       01  WS-SWITCHES.
+           05  WS-FEESORT-EOF-SW           PIC X VALUE 'N'.
+               88  END-OF-INPUT            VALUE 'Y'.
+           05  WS-FIRST-RECORD-SW          PIC X VALUE 'Y'.
+               88  FIRST-RECORD            VALUE 'Y'.
+               88  NOT-FIRST-RECORD        VALUE 'N'.
+
+       01  WS-CONTROL-CARD.
+           05  WS-CC-KEYWORD               PIC X(10).
+           05  WS-CC-VALUE                 PIC X(40).
+
+       01  WS-BUS-DATE                     PIC 9(8) VALUE ZERO.
+
+       01  WS-CONTROL-FIELDS.
+           05  WS-HOLD-NETWORK             PIC X(4).
+           05  WS-HOLD-MCC-CLASS           PIC X(2).
+       01  WS-SEQUENCE-KEY.
+           05  WS-SEQ-NETWORK              PIC X(4).
+           05  WS-SEQ-MCC-CLASS            PIC X(2).
+       01  WS-PREV-SEQUENCE-KEY            PIC X(6) VALUE LOW-VALUES.
+
+       01  WS-LEVEL-NUMBERS.
+           05  WS-CATEGORY-LEVEL           PIC S9(4) COMP VALUE 1.
+           05  WS-NETWORK-LEVEL            PIC S9(4) COMP VALUE 2.
+           05  WS-GRAND-LEVEL              PIC S9(4) COMP VALUE 3.
+       01  WS-LVL                          PIC S9(4) COMP.
+       01  WS-NEXT-LVL                     PIC S9(4) COMP.
+
+       01  WS-TOTALS.
+           05  WS-TOTAL-LEVEL              OCCURS 3 TIMES.
+               10  WS-T-DR-COUNT           PIC S9(9) COMP-3.
+               10  WS-T-DR-AMOUNT          PIC S9(13)V99 COMP-3.
+               10  WS-T-CR-COUNT           PIC S9(9) COMP-3.
+               10  WS-T-CR-AMOUNT          PIC S9(13)V99 COMP-3.
+               10  WS-T-INTERCHANGE        PIC S9(11)V99 COMP-3.
+               10  WS-T-NET                PIC S9(13)V99 COMP-3.
+
+       01  WS-COUNTERS.
+           05  WS-IN-COUNT                 PIC S9(9) COMP-3 VALUE 0.
+           05  WS-IN-AMOUNT                PIC S9(13)V99 COMP-3
+                                           VALUE 0.
+           05  WS-SETTLE-RECORDS           PIC S9(9) COMP-3 VALUE 0.
+
+       01  WS-CURRENT-DATE-TIME.
+           05  WS-CURR-DATE                PIC 9(8).
+           05  WS-CURR-TIME                PIC 9(6).
+           05  FILLER                      PIC X(7).
+
+       01  WS-DISPLAY-FIELDS.
+           05  WS-DISPLAY-COUNT            PIC ZZZ,ZZZ,ZZ9.
+           05  WS-DISPLAY-AMOUNT           PIC Z,ZZZ,ZZZ,ZZZ,ZZ9.99-.
+
+           COPY CPFEEDTL.
+           COPY CPSTLREC.
+           COPY CPCTLREC.
+           COPY CPDTPARM.
+           COPY CPERRWS.
+
+       PROCEDURE DIVISION.
+       0000-MAINLINE.
+           PERFORM 1000-INITIALIZE
+           PERFORM 2000-PROCESS-FEE-RECORD
+               UNTIL END-OF-INPUT
+           PERFORM 3000-FINALIZE
+           GOBACK.
+
+       1000-INITIALIZE.
+           INITIALIZE ERR-AREA
+           INITIALIZE WS-TOTALS
+           MOVE 'CPSETTLE' TO ERR-PROGRAM
+           MOVE FUNCTION CURRENT-DATE TO WS-CURRENT-DATE-TIME
+           PERFORM 1100-OPEN-FILES
+           PERFORM 1200-READ-CONTROL-CARDS
+           PERFORM 2900-READ-FEESORT.
+
+       1100-OPEN-FILES.
+           MOVE '1100-OPEN-FILES' TO ERR-PARAGRAPH
+           OPEN INPUT CTLCARD-FILE
+           IF NOT CTLCARD-OK
+               MOVE 'CTLCARD' TO ERR-FILE
+               MOVE WS-CTLCARD-STATUS TO ERR-STATUS
+               PERFORM 9800-OPEN-ERROR
+           END-IF
+           OPEN INPUT FEESORT-FILE
+           IF NOT FEESORT-OK
+               MOVE 'FEESORT' TO ERR-FILE
+               MOVE WS-FEESORT-STATUS TO ERR-STATUS
+               PERFORM 9800-OPEN-ERROR
+           END-IF
+           OPEN OUTPUT SETTLE-FILE
+           IF NOT SETTLE-OK
+               MOVE 'SETLOUT' TO ERR-FILE
+               MOVE WS-SETTLE-STATUS TO ERR-STATUS
+               PERFORM 9800-OPEN-ERROR
+           END-IF
+           OPEN OUTPUT CTL-FILE
+           IF NOT CTL-OK
+               MOVE 'CTLOUT' TO ERR-FILE
+               MOVE WS-CTL-STATUS TO ERR-STATUS
+               PERFORM 9800-OPEN-ERROR
+           END-IF.
+
+       1200-READ-CONTROL-CARDS.
+           MOVE '1200-READ-CONTROL-CARDS' TO ERR-PARAGRAPH
+           PERFORM 1210-READ-CARD
+           PERFORM UNTIL CTLCARD-EOF
+               IF CTLCARD-REC(1:1) NOT = '*'
+                   PERFORM 1220-PARSE-CARD
+               END-IF
+               PERFORM 1210-READ-CARD
+           END-PERFORM
+           CLOSE CTLCARD-FILE
+           SET DT-VALIDATE TO TRUE
+           MOVE WS-BUS-DATE TO DT-DATE-1
+           CALL 'CPDATEU' USING DT-PARMS
+           IF WS-BUS-DATE = ZERO OR NOT DT-OK
+               MOVE 'A VALID BUSDATE CONTROL CARD IS REQUIRED'
+                 TO ERR-MESSAGE
+               PERFORM 9900-ABEND
+           END-IF.
+
+       1210-READ-CARD.
+           READ CTLCARD-FILE
+           IF NOT CTLCARD-OK AND NOT CTLCARD-EOF
+               MOVE 'CTLCARD' TO ERR-FILE
+               MOVE WS-CTLCARD-STATUS TO ERR-STATUS
+               PERFORM 9810-IO-ERROR
+           END-IF.
+
+       1220-PARSE-CARD.
+           MOVE SPACES TO WS-CC-KEYWORD WS-CC-VALUE
+           UNSTRING CTLCARD-REC DELIMITED BY '=' OR ALL SPACES
+               INTO WS-CC-KEYWORD WS-CC-VALUE
+           END-UNSTRING
+           EVALUATE WS-CC-KEYWORD
+               WHEN SPACES
+                   CONTINUE
+               WHEN 'BUSDATE'
+                   IF WS-CC-VALUE(1:8) IS NUMERIC
+                       MOVE WS-CC-VALUE(1:8) TO WS-BUS-DATE
+                   ELSE
+                       MOVE 'BUSDATE VALUE MUST BE CCYYMMDD'
+                         TO ERR-MESSAGE
+                       PERFORM 9900-ABEND
+                   END-IF
+               WHEN OTHER
+                   MOVE SPACES TO ERR-MESSAGE
+                   STRING 'UNRECOGNIZED CONTROL CARD KEYWORD '
+                          WS-CC-KEYWORD DELIMITED BY SIZE
+                     INTO ERR-MESSAGE
+                   END-STRING
+                   PERFORM 9900-ABEND
+           END-EVALUATE.
+
+       2000-PROCESS-FEE-RECORD.
+           ADD 1 TO WS-IN-COUNT
+           ADD FEE-AMOUNT TO WS-IN-AMOUNT
+           PERFORM 2050-CHECK-SEQUENCE
+           IF FIRST-RECORD
+               MOVE FEE-NETWORK TO WS-HOLD-NETWORK
+               MOVE FEE-MCC-CLASS TO WS-HOLD-MCC-CLASS
+               SET NOT-FIRST-RECORD TO TRUE
+           ELSE
+               EVALUATE TRUE
+                   WHEN FEE-NETWORK NOT = WS-HOLD-NETWORK
+                       PERFORM 2200-CATEGORY-BREAK
+                       PERFORM 2300-NETWORK-BREAK
+                   WHEN FEE-MCC-CLASS NOT = WS-HOLD-MCC-CLASS
+                       PERFORM 2200-CATEGORY-BREAK
+               END-EVALUATE
+           END-IF
+           PERFORM 2100-ACCUMULATE
+           PERFORM 2900-READ-FEESORT.
+
+       2050-CHECK-SEQUENCE.
+           MOVE FEE-NETWORK TO WS-SEQ-NETWORK
+           MOVE FEE-MCC-CLASS TO WS-SEQ-MCC-CLASS
+           IF WS-SEQUENCE-KEY < WS-PREV-SEQUENCE-KEY
+               MOVE '2050-CHECK-SEQUENCE' TO ERR-PARAGRAPH
+               MOVE 'INPUT NOT IN NETWORK/CATEGORY SEQUENCE'
+                 TO ERR-MESSAGE
+               PERFORM 9900-ABEND
+           END-IF
+           MOVE WS-SEQUENCE-KEY TO WS-PREV-SEQUENCE-KEY.
+
+       2100-ACCUMULATE.
+           MOVE WS-CATEGORY-LEVEL TO WS-LVL
+           IF FEE-DEBIT
+               ADD 1 TO WS-T-DR-COUNT(WS-LVL)
+               ADD FEE-AMOUNT TO WS-T-DR-AMOUNT(WS-LVL)
+           ELSE
+               ADD 1 TO WS-T-CR-COUNT(WS-LVL)
+               ADD FEE-AMOUNT TO WS-T-CR-AMOUNT(WS-LVL)
+           END-IF
+           ADD FEE-INTERCHANGE TO WS-T-INTERCHANGE(WS-LVL)
+           ADD FEE-NET-AMOUNT TO WS-T-NET(WS-LVL).
+
+       2200-CATEGORY-BREAK.
+           MOVE WS-CATEGORY-LEVEL TO WS-LVL
+           MOVE SPACES TO STL-RECORD
+           SET STL-CATEGORY TO TRUE
+           MOVE WS-HOLD-NETWORK TO STL-NETWORK
+           MOVE WS-HOLD-MCC-CLASS TO STL-MCC-CLASS
+           PERFORM 2400-WRITE-SETTLEMENT
+           MOVE WS-NETWORK-LEVEL TO WS-NEXT-LVL
+           PERFORM 2500-ROLL-TOTALS
+           MOVE FEE-MCC-CLASS TO WS-HOLD-MCC-CLASS.
+
+       2300-NETWORK-BREAK.
+           MOVE WS-NETWORK-LEVEL TO WS-LVL
+           MOVE SPACES TO STL-RECORD
+           SET STL-NETWORK-TOTAL TO TRUE
+           MOVE WS-HOLD-NETWORK TO STL-NETWORK
+           PERFORM 2400-WRITE-SETTLEMENT
+           MOVE WS-GRAND-LEVEL TO WS-NEXT-LVL
+           PERFORM 2500-ROLL-TOTALS
+           MOVE FEE-NETWORK TO WS-HOLD-NETWORK.
+
+       2400-WRITE-SETTLEMENT.
+           MOVE WS-BUS-DATE TO STL-BUS-DATE
+           MOVE WS-T-DR-COUNT(WS-LVL) TO STL-DR-COUNT
+           MOVE WS-T-DR-AMOUNT(WS-LVL) TO STL-DR-AMOUNT
+           MOVE WS-T-CR-COUNT(WS-LVL) TO STL-CR-COUNT
+           MOVE WS-T-CR-AMOUNT(WS-LVL) TO STL-CR-AMOUNT
+           MOVE WS-T-INTERCHANGE(WS-LVL) TO STL-INTERCHANGE
+           MOVE WS-T-NET(WS-LVL) TO STL-NET-SETTLEMENT
+           WRITE SETTLE-REC FROM STL-RECORD
+           IF NOT SETTLE-OK
+               MOVE '2400-WRITE-SETTLEMENT' TO ERR-PARAGRAPH
+               MOVE 'SETLOUT' TO ERR-FILE
+               MOVE WS-SETTLE-STATUS TO ERR-STATUS
+               PERFORM 9810-IO-ERROR
+           END-IF
+           ADD 1 TO WS-SETTLE-RECORDS.
+
+       2500-ROLL-TOTALS.
+           ADD WS-T-DR-COUNT(WS-LVL) TO WS-T-DR-COUNT(WS-NEXT-LVL)
+           ADD WS-T-DR-AMOUNT(WS-LVL) TO WS-T-DR-AMOUNT(WS-NEXT-LVL)
+           ADD WS-T-CR-COUNT(WS-LVL) TO WS-T-CR-COUNT(WS-NEXT-LVL)
+           ADD WS-T-CR-AMOUNT(WS-LVL) TO WS-T-CR-AMOUNT(WS-NEXT-LVL)
+           ADD WS-T-INTERCHANGE(WS-LVL)
+            TO WS-T-INTERCHANGE(WS-NEXT-LVL)
+           ADD WS-T-NET(WS-LVL) TO WS-T-NET(WS-NEXT-LVL)
+           INITIALIZE WS-TOTAL-LEVEL(WS-LVL).
+
+       2900-READ-FEESORT.
+           READ FEESORT-FILE INTO FEE-RECORD
+           EVALUATE TRUE
+               WHEN FEESORT-OK
+                   CONTINUE
+               WHEN FEESORT-EOF
+                   SET END-OF-INPUT TO TRUE
+               WHEN OTHER
+                   MOVE '2900-READ-FEESORT' TO ERR-PARAGRAPH
+                   MOVE 'FEESORT' TO ERR-FILE
+                   MOVE WS-FEESORT-STATUS TO ERR-STATUS
+                   PERFORM 9810-IO-ERROR
+           END-EVALUATE.
+
+       3000-FINALIZE.
+           IF NOT-FIRST-RECORD
+               PERFORM 2200-CATEGORY-BREAK
+               PERFORM 2300-NETWORK-BREAK
+           END-IF
+           MOVE WS-GRAND-LEVEL TO WS-LVL
+           MOVE SPACES TO STL-RECORD
+           SET STL-GRAND-TOTAL TO TRUE
+           PERFORM 2400-WRITE-SETTLEMENT
+           PERFORM 3100-WRITE-CONTROL-TOTALS
+           CLOSE FEESORT-FILE
+                 SETTLE-FILE
+                 CTL-FILE
+           PERFORM 3200-DISPLAY-STATISTICS
+           MOVE ZERO TO RETURN-CODE.
+
+       3100-WRITE-CONTROL-TOTALS.
+           MOVE WS-GRAND-LEVEL TO WS-LVL
+           MOVE SPACES TO CTL-RECORD
+           MOVE 'CPSETTLE' TO CTL-STEP
+           MOVE WS-BUS-DATE TO CTL-BUS-DATE
+           MOVE WS-IN-COUNT TO CTL-IN-COUNT
+           MOVE WS-IN-AMOUNT TO CTL-IN-AMOUNT
+           COMPUTE CTL-OUT-COUNT = WS-T-DR-COUNT(WS-LVL)
+                                 + WS-T-CR-COUNT(WS-LVL)
+           COMPUTE CTL-OUT-AMOUNT = WS-T-DR-AMOUNT(WS-LVL)
+                                  + WS-T-CR-AMOUNT(WS-LVL)
+           MOVE ZERO TO CTL-REJ-COUNT
+           MOVE ZERO TO CTL-REJ-AMOUNT
+           MOVE WS-CURR-DATE TO CTL-RUN-DATE
+           MOVE WS-CURR-TIME TO CTL-RUN-TIME
+           WRITE CTL-REC FROM CTL-RECORD
+           IF NOT CTL-OK
+               MOVE '3100-WRITE-CONTROL-TOTALS' TO ERR-PARAGRAPH
+               MOVE 'CTLOUT' TO ERR-FILE
+               MOVE WS-CTL-STATUS TO ERR-STATUS
+               PERFORM 9810-IO-ERROR
+           END-IF.
+
+       3200-DISPLAY-STATISTICS.
+           MOVE WS-GRAND-LEVEL TO WS-LVL
+           DISPLAY 'CPSETTLE NETWORK SETTLEMENT SUMMARY'
+           MOVE WS-IN-COUNT TO WS-DISPLAY-COUNT
+           MOVE WS-IN-AMOUNT TO WS-DISPLAY-AMOUNT
+           DISPLAY '  FEE RECORDS READ     ' WS-DISPLAY-COUNT
+                   '  ' WS-DISPLAY-AMOUNT
+           MOVE WS-SETTLE-RECORDS TO WS-DISPLAY-COUNT
+           DISPLAY '  SETTLEMENT RECORDS   ' WS-DISPLAY-COUNT
+           MOVE WS-T-INTERCHANGE(WS-LVL) TO WS-DISPLAY-AMOUNT
+           DISPLAY '  TOTAL INTERCHANGE    ' WS-DISPLAY-AMOUNT
+           MOVE WS-T-NET(WS-LVL) TO WS-DISPLAY-AMOUNT
+           DISPLAY '  NET DUE TO NETWORKS  ' WS-DISPLAY-AMOUNT.
+
+       9800-OPEN-ERROR.
+           MOVE 'UNABLE TO OPEN FILE' TO ERR-MESSAGE
+           PERFORM 9900-ABEND.
+
+       9810-IO-ERROR.
+           MOVE 'UNEXPECTED FILE STATUS' TO ERR-MESSAGE
+           PERFORM 9900-ABEND.
+
+       9900-ABEND.
+           MOVE 16 TO ERR-RETURN-CODE
+           CALL 'CPABEND' USING ERR-AREA.

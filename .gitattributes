@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.cbl text eol=lf
+*.cpy text eol=lf
+*.jcl text eol=lf

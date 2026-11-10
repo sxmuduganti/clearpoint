@@ -1,0 +1,444 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CPFEECAL.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT CTLCARD-FILE ASSIGN TO CTLCARD
+               ORGANIZATION IS SEQUENTIAL
+               FILE STATUS IS WS-CTLCARD-STATUS.
+           SELECT FEESCHED-FILE ASSIGN TO FEESCHED
+               ORGANIZATION IS SEQUENTIAL
+               FILE STATUS IS WS-FEESCHED-STATUS.
+           SELECT POSTED-FILE ASSIGN TO POSTIN
+               ORGANIZATION IS SEQUENTIAL
+               FILE STATUS IS WS-POSTED-STATUS.
+           SELECT FEEDTL-FILE ASSIGN TO FEEOUT
+               ORGANIZATION IS SEQUENTIAL
+               FILE STATUS IS WS-FEEDTL-STATUS.
+           SELECT CTL-FILE ASSIGN TO CTLOUT
+               ORGANIZATION IS SEQUENTIAL
+               FILE STATUS IS WS-CTL-STATUS.
+       DATA DIVISION.
+       FILE SECTION.
+       FD  CTLCARD-FILE
+           RECORDING MODE IS F
+           BLOCK CONTAINS 0 RECORDS
+           RECORD CONTAINS 80 CHARACTERS.
+       01  CTLCARD-REC                     PIC X(80).
+       FD  FEESCHED-FILE
+           RECORDING MODE IS F
+           BLOCK CONTAINS 0 RECORDS
+           RECORD CONTAINS 80 CHARACTERS.
+       01  FEESCHED-REC                    PIC X(80).
+       FD  POSTED-FILE
+           RECORDING MODE IS F
+           BLOCK CONTAINS 0 RECORDS
+           RECORD CONTAINS 250 CHARACTERS.
+       01  POSTED-REC                      PIC X(250).
+       FD  FEEDTL-FILE
+           RECORDING MODE IS F
+           BLOCK CONTAINS 0 RECORDS
+           RECORD CONTAINS 150 CHARACTERS.
+       01  FEEDTL-REC                      PIC X(150).
+       FD  CTL-FILE
+           RECORDING MODE IS F
+           BLOCK CONTAINS 0 RECORDS
+           RECORD CONTAINS 120 CHARACTERS.
+       01  CTL-REC                         PIC X(120).
+
+       WORKING-STORAGE SECTION.
+       01  WS-FILE-STATUSES.
+           05  WS-CTLCARD-STATUS           PIC X(2).
+               88  CTLCARD-OK              VALUE '00'.
+               88  CTLCARD-EOF             VALUE '10'.
+           05  WS-FEESCHED-STATUS          PIC X(2).
+               88  FEESCHED-OK             VALUE '00'.
+               88  FEESCHED-EOF            VALUE '10'.
+           05  WS-POSTED-STATUS            PIC X(2).
+               88  POSTED-OK               VALUE '00'.
+               88  POSTED-EOF              VALUE '10'.
+           05  WS-FEEDTL-STATUS            PIC X(2).
+               88  FEEDTL-OK               VALUE '00'.
+           05  WS-CTL-STATUS               PIC X(2).
+               88  CTL-OK                  VALUE '00'.
+
+       01  WS-SWITCHES.
+           05  WS-FEESCHED-EOF-SW          PIC X VALUE 'N'.
+               88  END-OF-FEESCHED         VALUE 'Y'.
+           05  WS-POSTED-EOF-SW            PIC X VALUE 'N'.
+               88  END-OF-POSTED           VALUE 'Y'.
+
+       01  WS-CONTROL-CARD.
+           05  WS-CC-KEYWORD               PIC X(10).
+           05  WS-CC-VALUE                 PIC X(40).
+
+       01  WS-BUS-DATE                     PIC 9(8) VALUE ZERO.
+       01  WS-MAX-FEE-ENTRIES              PIC S9(4) COMP VALUE 500.
+       01  WS-PREV-FEE-KEY                 PIC X(11) VALUE LOW-VALUES.
+       01  WS-NET-SUB                      PIC S9(4) COMP.
+
+       01  WS-NETWORK-VALUES               PIC X(16)
+                                           VALUE 'VISAMCRDAMEXDISC'.
+       01  WS-NETWORK-TABLE REDEFINES WS-NETWORK-VALUES.
+           05  WS-NETWORK-CODE             PIC X(4) OCCURS 4 TIMES.
+
+       01  WS-COUNTERS.
+           05  WS-SCHED-READ               PIC S9(5) COMP-3 VALUE 0.
+           05  WS-SCHED-NOT-EFFECTIVE      PIC S9(5) COMP-3 VALUE 0.
+           05  WS-IN-COUNT                 PIC S9(9) COMP-3 VALUE 0.
+           05  WS-IN-AMOUNT                PIC S9(13)V99 COMP-3
+                                           VALUE 0.
+           05  WS-OUT-COUNT                PIC S9(9) COMP-3 VALUE 0.
+           05  WS-OUT-AMOUNT               PIC S9(13)V99 COMP-3
+                                           VALUE 0.
+           05  WS-DEFAULTED-COUNT          PIC S9(9) COMP-3 VALUE 0.
+           05  WS-TOTAL-INTERCHANGE        PIC S9(11)V99 COMP-3
+                                           VALUE 0.
+           05  WS-TOTAL-NET                PIC S9(13)V99 COMP-3
+                                           VALUE 0.
+
+       01  WS-CURRENT-DATE-TIME.
+           05  WS-CURR-DATE                PIC 9(8).
+           05  WS-CURR-TIME                PIC 9(6).
+           05  FILLER                      PIC X(7).
+
+       01  WS-DISPLAY-FIELDS.
+           05  WS-DISPLAY-COUNT            PIC ZZZ,ZZZ,ZZ9.
+           05  WS-DISPLAY-AMOUNT           PIC Z,ZZZ,ZZZ,ZZZ,ZZ9.99-.
+
+           COPY CPFEEREC.
+           COPY CPFEETBL.
+           COPY CPINTPRM.
+           COPY CPPSTREC.
+           COPY CPENRREC.
+           COPY CPFEEDTL.
+           COPY CPCTLREC.
+           COPY CPDTPARM.
+           COPY CPERRWS.
+
+       PROCEDURE DIVISION.
+       0000-MAINLINE.
+           PERFORM 1000-INITIALIZE
+           PERFORM 2000-CALCULATE-INTERCHANGE
+               UNTIL END-OF-POSTED
+           PERFORM 3000-FINALIZE
+           GOBACK.
+
+       1000-INITIALIZE.
+           INITIALIZE ERR-AREA
+           MOVE 'CPFEECAL' TO ERR-PROGRAM
+           MOVE FUNCTION CURRENT-DATE TO WS-CURRENT-DATE-TIME
+           PERFORM 1100-OPEN-FILES
+           PERFORM 1200-READ-CONTROL-CARDS
+           PERFORM 1300-LOAD-FEE-TABLE
+           PERFORM 1400-VERIFY-NETWORK-DEFAULTS
+           PERFORM 2900-READ-POSTED.
+
+       1100-OPEN-FILES.
+           MOVE '1100-OPEN-FILES' TO ERR-PARAGRAPH
+           OPEN INPUT CTLCARD-FILE
+           IF NOT CTLCARD-OK
+               MOVE 'CTLCARD' TO ERR-FILE
+               MOVE WS-CTLCARD-STATUS TO ERR-STATUS
+               PERFORM 9800-OPEN-ERROR
+           END-IF
+           OPEN INPUT FEESCHED-FILE
+           IF NOT FEESCHED-OK
+               MOVE 'FEESCHED' TO ERR-FILE
+               MOVE WS-FEESCHED-STATUS TO ERR-STATUS
+               PERFORM 9800-OPEN-ERROR
+           END-IF
+           OPEN INPUT POSTED-FILE
+           IF NOT POSTED-OK
+               MOVE 'POSTIN' TO ERR-FILE
+               MOVE WS-POSTED-STATUS TO ERR-STATUS
+               PERFORM 9800-OPEN-ERROR
+           END-IF
+           OPEN OUTPUT FEEDTL-FILE
+           IF NOT FEEDTL-OK
+               MOVE 'FEEOUT' TO ERR-FILE
+               MOVE WS-FEEDTL-STATUS TO ERR-STATUS
+               PERFORM 9800-OPEN-ERROR
+           END-IF
+           OPEN OUTPUT CTL-FILE
+           IF NOT CTL-OK
+               MOVE 'CTLOUT' TO ERR-FILE
+               MOVE WS-CTL-STATUS TO ERR-STATUS
+               PERFORM 9800-OPEN-ERROR
+           END-IF.
+
+       1200-READ-CONTROL-CARDS.
+           MOVE '1200-READ-CONTROL-CARDS' TO ERR-PARAGRAPH
+           PERFORM 1210-READ-CARD
+           PERFORM UNTIL CTLCARD-EOF
+               IF CTLCARD-REC(1:1) NOT = '*'
+                   PERFORM 1220-PARSE-CARD
+               END-IF
+               PERFORM 1210-READ-CARD
+           END-PERFORM
+           CLOSE CTLCARD-FILE
+           SET DT-VALIDATE TO TRUE
+           MOVE WS-BUS-DATE TO DT-DATE-1
+           CALL 'CPDATEU' USING DT-PARMS
+           IF WS-BUS-DATE = ZERO OR NOT DT-OK
+               MOVE 'A VALID BUSDATE CONTROL CARD IS REQUIRED'
+                 TO ERR-MESSAGE
+               PERFORM 9900-ABEND
+           END-IF.
+
+       1210-READ-CARD.
+           READ CTLCARD-FILE
+           IF NOT CTLCARD-OK AND NOT CTLCARD-EOF
+               MOVE 'CTLCARD' TO ERR-FILE
+               MOVE WS-CTLCARD-STATUS TO ERR-STATUS
+               PERFORM 9810-IO-ERROR
+           END-IF.
+
+       1220-PARSE-CARD.
+           MOVE SPACES TO WS-CC-KEYWORD WS-CC-VALUE
+           UNSTRING CTLCARD-REC DELIMITED BY '=' OR ALL SPACES
+               INTO WS-CC-KEYWORD WS-CC-VALUE
+           END-UNSTRING
+           EVALUATE WS-CC-KEYWORD
+               WHEN SPACES
+                   CONTINUE
+               WHEN 'BUSDATE'
+                   IF WS-CC-VALUE(1:8) IS NUMERIC
+                       MOVE WS-CC-VALUE(1:8) TO WS-BUS-DATE
+                   ELSE
+                       MOVE 'BUSDATE VALUE MUST BE CCYYMMDD'
+                         TO ERR-MESSAGE
+                       PERFORM 9900-ABEND
+                   END-IF
+               WHEN OTHER
+                   MOVE SPACES TO ERR-MESSAGE
+                   STRING 'UNRECOGNIZED CONTROL CARD KEYWORD '
+                          WS-CC-KEYWORD DELIMITED BY SIZE
+                     INTO ERR-MESSAGE
+                   END-STRING
+                   PERFORM 9900-ABEND
+           END-EVALUATE.
+
+       1300-LOAD-FEE-TABLE.
+           MOVE '1300-LOAD-FEE-TABLE' TO ERR-PARAGRAPH
+           MOVE ZERO TO FT-ENTRY-COUNT
+           PERFORM 1310-READ-FEESCHED
+           PERFORM UNTIL END-OF-FEESCHED
+               PERFORM 1320-EDIT-FEE-ENTRY
+               IF FS-EFF-DATE > WS-BUS-DATE
+                   ADD 1 TO WS-SCHED-NOT-EFFECTIVE
+               ELSE
+                   PERFORM 1330-ADD-FEE-ENTRY
+               END-IF
+               PERFORM 1310-READ-FEESCHED
+           END-PERFORM
+           CLOSE FEESCHED-FILE
+           IF FT-ENTRY-COUNT = ZERO
+               MOVE 'NO EFFECTIVE FEE SCHEDULE ENTRIES LOADED'
+                 TO ERR-MESSAGE
+               PERFORM 9900-ABEND
+           END-IF.
+
+       1310-READ-FEESCHED.
+           READ FEESCHED-FILE INTO FS-RECORD
+           EVALUATE TRUE
+               WHEN FEESCHED-OK
+                   ADD 1 TO WS-SCHED-READ
+               WHEN FEESCHED-EOF
+                   SET END-OF-FEESCHED TO TRUE
+               WHEN OTHER
+                   MOVE 'FEESCHED' TO ERR-FILE
+                   MOVE WS-FEESCHED-STATUS TO ERR-STATUS
+                   PERFORM 9810-IO-ERROR
+           END-EVALUATE.
+
+       1320-EDIT-FEE-ENTRY.
+           IF FS-RATE IS NOT NUMERIC
+              OR FS-PER-ITEM IS NOT NUMERIC
+              OR FS-MAX-FEE IS NOT NUMERIC
+              OR FS-EFF-DATE IS NOT NUMERIC
+               DISPLAY 'CPFEECAL INVALID FEE ENTRY ' FS-KEY
+               MOVE 'NON-NUMERIC DATA IN FEE SCHEDULE'
+                 TO ERR-MESSAGE
+               PERFORM 9900-ABEND
+           END-IF
+           IF FS-KEY NOT > WS-PREV-FEE-KEY
+               DISPLAY 'CPFEECAL OUT OF SEQUENCE KEY ' FS-KEY
+               MOVE 'FEE SCHEDULE NOT IN ASCENDING KEY SEQUENCE'
+                 TO ERR-MESSAGE
+               PERFORM 9900-ABEND
+           END-IF
+           MOVE FS-KEY TO WS-PREV-FEE-KEY.
+
+       1330-ADD-FEE-ENTRY.
+           IF FT-ENTRY-COUNT >= WS-MAX-FEE-ENTRIES
+               MOVE 'FEE TABLE CAPACITY EXCEEDED' TO ERR-MESSAGE
+               PERFORM 9900-ABEND
+           END-IF
+           ADD 1 TO FT-ENTRY-COUNT
+           MOVE FS-KEY TO FT-KEY(FT-ENTRY-COUNT)
+           MOVE FS-RATE TO FT-RATE(FT-ENTRY-COUNT)
+           MOVE FS-PER-ITEM TO FT-PER-ITEM(FT-ENTRY-COUNT)
+           MOVE FS-MAX-FEE TO FT-MAX-FEE(FT-ENTRY-COUNT).
+
+       1400-VERIFY-NETWORK-DEFAULTS.
+           MOVE '1400-VERIFY-NETWORK-DEFAULTS' TO ERR-PARAGRAPH
+           PERFORM VARYING WS-NET-SUB FROM 1 BY 1
+                   UNTIL WS-NET-SUB > 4
+               MOVE WS-NETWORK-CODE(WS-NET-SUB) TO INT-NETWORK
+               MOVE HIGH-VALUES TO INT-PRODUCT
+                                   INT-MCC-CLASS
+                                   INT-PRESENCE
+               SET INT-DEBIT TO TRUE
+               MOVE ZERO TO INT-AMOUNT
+               CALL 'CPINTCH' USING FEE-TABLE INT-PARMS
+               IF NOT INT-NETWORK-DEFAULT
+                   MOVE SPACES TO ERR-MESSAGE
+                   STRING 'NO DEFAULT FEE ENTRY FOR NETWORK '
+                          WS-NETWORK-CODE(WS-NET-SUB)
+                          DELIMITED BY SIZE
+                     INTO ERR-MESSAGE
+                   END-STRING
+                   PERFORM 9900-ABEND
+               END-IF
+           END-PERFORM.
+
+       2000-CALCULATE-INTERCHANGE.
+           MOVE PST-ENRICHED TO ENR-RECORD
+           ADD 1 TO WS-IN-COUNT
+           ADD ENR-AMOUNT TO WS-IN-AMOUNT
+           MOVE ENR-NETWORK TO INT-NETWORK
+           MOVE PST-PRODUCT TO INT-PRODUCT
+           MOVE ENR-MCC-CLASS TO INT-MCC-CLASS
+           MOVE ENR-PRESENCE TO INT-PRESENCE
+           MOVE ENR-DR-CR TO INT-DR-CR
+           MOVE ENR-AMOUNT TO INT-AMOUNT
+           CALL 'CPINTCH' USING FEE-TABLE INT-PARMS
+           IF INT-NOT-FOUND
+               MOVE '2000-CALCULATE-INTERCHANGE' TO ERR-PARAGRAPH
+               MOVE SPACES TO ERR-MESSAGE
+               STRING 'NO FEE ENTRY RESOLVED FOR TRANSACTION '
+                      ENR-TRAN-ID DELIMITED BY SIZE
+                 INTO ERR-MESSAGE
+               END-STRING
+               PERFORM 9900-ABEND
+           END-IF
+           IF INT-DEFAULTED
+               ADD 1 TO WS-DEFAULTED-COUNT
+           END-IF
+           PERFORM 2100-BUILD-FEE-RECORD
+           PERFORM 2200-WRITE-FEE-RECORD
+           PERFORM 2900-READ-POSTED.
+
+       2100-BUILD-FEE-RECORD.
+           MOVE SPACES TO FEE-RECORD
+           MOVE ENR-TRAN-ID TO FEE-TRAN-ID
+           MOVE ENR-ACCT-NUM TO FEE-ACCT-NUM
+           MOVE ENR-NETWORK TO FEE-NETWORK
+           MOVE PST-PRODUCT TO FEE-PRODUCT
+           MOVE ENR-MCC-CLASS TO FEE-MCC-CLASS
+           MOVE ENR-PRESENCE TO FEE-PRESENCE
+           MOVE ENR-TRAN-TYPE TO FEE-TRAN-TYPE
+           MOVE ENR-DR-CR TO FEE-DR-CR
+           MOVE ENR-AMOUNT TO FEE-AMOUNT
+           MOVE INT-RATE TO FEE-RATE
+           MOVE INT-PER-ITEM TO FEE-PER-ITEM
+           MOVE INT-FEE TO FEE-INTERCHANGE
+           IF ENR-DEBIT
+               COMPUTE FEE-NET-AMOUNT = ENR-AMOUNT - INT-FEE
+           ELSE
+               COMPUTE FEE-NET-AMOUNT = ZERO - ENR-AMOUNT - INT-FEE
+           END-IF
+           MOVE INT-MATCHED-KEY TO FEE-SCHED-KEY
+           MOVE INT-MATCH-LEVEL TO FEE-MATCH-LEVEL
+           MOVE WS-BUS-DATE TO FEE-BUS-DATE.
+
+       2200-WRITE-FEE-RECORD.
+           WRITE FEEDTL-REC FROM FEE-RECORD
+           IF NOT FEEDTL-OK
+               MOVE '2200-WRITE-FEE-RECORD' TO ERR-PARAGRAPH
+               MOVE 'FEEOUT' TO ERR-FILE
+               MOVE WS-FEEDTL-STATUS TO ERR-STATUS
+               PERFORM 9810-IO-ERROR
+           END-IF
+           ADD 1 TO WS-OUT-COUNT
+           ADD FEE-AMOUNT TO WS-OUT-AMOUNT
+           ADD FEE-INTERCHANGE TO WS-TOTAL-INTERCHANGE
+           ADD FEE-NET-AMOUNT TO WS-TOTAL-NET.
+
+       2900-READ-POSTED.
+           READ POSTED-FILE INTO PST-RECORD
+           EVALUATE TRUE
+               WHEN POSTED-OK
+                   CONTINUE
+               WHEN POSTED-EOF
+                   SET END-OF-POSTED TO TRUE
+               WHEN OTHER
+                   MOVE '2900-READ-POSTED' TO ERR-PARAGRAPH
+                   MOVE 'POSTIN' TO ERR-FILE
+                   MOVE WS-POSTED-STATUS TO ERR-STATUS
+                   PERFORM 9810-IO-ERROR
+           END-EVALUATE.
+
+       3000-FINALIZE.
+           PERFORM 3100-WRITE-CONTROL-TOTALS
+           CLOSE POSTED-FILE
+                 FEEDTL-FILE
+                 CTL-FILE
+           PERFORM 3200-DISPLAY-STATISTICS
+           MOVE ZERO TO RETURN-CODE.
+
+       3100-WRITE-CONTROL-TOTALS.
+           MOVE SPACES TO CTL-RECORD
+           MOVE 'CPFEECAL' TO CTL-STEP
+           MOVE WS-BUS-DATE TO CTL-BUS-DATE
+           MOVE WS-IN-COUNT TO CTL-IN-COUNT
+           MOVE WS-IN-AMOUNT TO CTL-IN-AMOUNT
+           MOVE WS-OUT-COUNT TO CTL-OUT-COUNT
+           MOVE WS-OUT-AMOUNT TO CTL-OUT-AMOUNT
+           MOVE ZERO TO CTL-REJ-COUNT
+           MOVE ZERO TO CTL-REJ-AMOUNT
+           MOVE WS-CURR-DATE TO CTL-RUN-DATE
+           MOVE WS-CURR-TIME TO CTL-RUN-TIME
+           WRITE CTL-REC FROM CTL-RECORD
+           IF NOT CTL-OK
+               MOVE '3100-WRITE-CONTROL-TOTALS' TO ERR-PARAGRAPH
+               MOVE 'CTLOUT' TO ERR-FILE
+               MOVE WS-CTL-STATUS TO ERR-STATUS
+               PERFORM 9810-IO-ERROR
+           END-IF.
+
+       3200-DISPLAY-STATISTICS.
+           DISPLAY 'CPFEECAL INTERCHANGE CALCULATION SUMMARY'
+           MOVE WS-SCHED-READ TO WS-DISPLAY-COUNT
+           DISPLAY '  FEE ENTRIES READ     ' WS-DISPLAY-COUNT
+           MOVE FT-ENTRY-COUNT TO WS-DISPLAY-COUNT
+           DISPLAY '  FEE ENTRIES LOADED   ' WS-DISPLAY-COUNT
+           MOVE WS-SCHED-NOT-EFFECTIVE TO WS-DISPLAY-COUNT
+           DISPLAY '  NOT YET EFFECTIVE    ' WS-DISPLAY-COUNT
+           MOVE WS-IN-COUNT TO WS-DISPLAY-COUNT
+           MOVE WS-IN-AMOUNT TO WS-DISPLAY-AMOUNT
+           DISPLAY '  POSTINGS READ        ' WS-DISPLAY-COUNT
+                   '  ' WS-DISPLAY-AMOUNT
+           MOVE WS-OUT-COUNT TO WS-DISPLAY-COUNT
+           MOVE WS-OUT-AMOUNT TO WS-DISPLAY-AMOUNT
+           DISPLAY '  FEE RECORDS WRITTEN  ' WS-DISPLAY-COUNT
+                   '  ' WS-DISPLAY-AMOUNT
+           MOVE WS-DEFAULTED-COUNT TO WS-DISPLAY-COUNT
+           DISPLAY '  DEFAULT RATE APPLIED ' WS-DISPLAY-COUNT
+           MOVE WS-TOTAL-INTERCHANGE TO WS-DISPLAY-AMOUNT
+           DISPLAY '  TOTAL INTERCHANGE    ' WS-DISPLAY-AMOUNT
+           MOVE WS-TOTAL-NET TO WS-DISPLAY-AMOUNT
+           DISPLAY '  NET SETTLEMENT       ' WS-DISPLAY-AMOUNT.
+
+       9800-OPEN-ERROR.
+           MOVE 'UNABLE TO OPEN FILE' TO ERR-MESSAGE
+           PERFORM 9900-ABEND.
+
+       9810-IO-ERROR.
+           MOVE 'UNEXPECTED FILE STATUS' TO ERR-MESSAGE
+           PERFORM 9900-ABEND.
+
+       9900-ABEND.
+           MOVE 16 TO ERR-RETURN-CODE
+           CALL 'CPABEND' USING ERR-AREA.
