@@ -1,0 +1,99 @@
+openapi: 3.0.3
+info:
+  title: CLEARPOINT Account Inquiry
+  version: 1.0.0
+  description: >
+    Read-only account summary served by CICS program CPACCAPI through
+    z/OS Connect. The request and response map one-to-one to the
+    CPAPICA COMMAREA copybook.
+servers:
+  - url: https://zosconnect.example.internal/clearpoint/v1
+paths:
+  /accounts/{accountNumber}:
+    get:
+      operationId: getAccount
+      summary: Retrieve the current position of a card account
+      parameters:
+        - name: accountNumber
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9]{12}$'
+      responses:
+        '200':
+          description: Account found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '400':
+          description: Account number is not 12 numeric digits
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Account file closed for the nightly batch window
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    AccountResponse:
+      type: object
+      properties:
+        returnCode:
+          type: integer
+          description: Maps API-RETURN-CODE (00 OK)
+        message:
+          type: string
+        account:
+          type: object
+          properties:
+            customerId:
+              type: string
+            product:
+              type: string
+              enum: [PLAT, GOLD, CLSC]
+            status:
+              type: string
+              enum: [ACTIVE, CLOSED, FROZEN, CHARGED_OFF, UNKNOWN]
+            openDate:
+              type: string
+              format: date
+            creditLimit:
+              type: number
+              format: decimal
+            currentBalance:
+              type: number
+              format: decimal
+            availableCredit:
+              type: number
+              format: decimal
+            cashLimit:
+              type: number
+              format: decimal
+            cashBalance:
+              type: number
+              format: decimal
+            overLimit:
+              type: boolean
+            lastPostDate:
+              type: string
+              format: date
+    ErrorResponse:
+      type: object
+      properties:
+        returnCode:
+          type: integer
+          description: 04 not found, 08 invalid request, 12 unavailable, 16 system error
+        message:
+          type: string
