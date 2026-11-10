@@ -1,0 +1,5 @@
+  OPTION EQUALS
+  SORT FIELDS=(90,12,CH,A,
+               64,8,CH,A,
+               72,6,CH,A,
+               1,16,CH,A)

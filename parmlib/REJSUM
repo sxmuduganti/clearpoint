@@ -1,0 +1,6 @@
+  OCCUR FROM(REJECTS) LIST(REJRPT) -
+        TITLE('CLEARPOINT DAILY REJECT SUMMARY') DATE -
+        HEADER('STEP')        ON(1,8,CH)    -
+        HEADER('REASON')      ON(17,4,CH)   -
+        HEADER('DESCRIPTION') ON(21,40,CH)  -
+        HEADER('COUNT')       VALCNT
