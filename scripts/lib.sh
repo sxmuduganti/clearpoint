@@ -57,8 +57,10 @@ sort_fees() {
 }
 
 load_masters() {
-  rm -f "$WORK"/ACCTMAST* "$WORK"/CARDXREF "$WORK"/CARDXREF.* \
-        "$WORK"/MERCHMST* "$WORK"/RSTCTL*
+  rm -f "$WORK"/ACCTMAST "$WORK"/ACCTMAST.[0-9]* \
+        "$WORK"/CARDXREF "$WORK"/CARDXREF.[0-9]* \
+        "$WORK"/MERCHMST "$WORK"/MERCHMST.[0-9]* \
+        "$WORK"/RSTCTL "$WORK"/RSTCTL.[0-9]*
   cards "$WORK/LOADACCT" "LOAD=ACCOUNTS"
   cards "$WORK/LOADCARD" "LOAD=CARDS"
   cards "$WORK/LOADMERC" "LOAD=MERCHANTS"
